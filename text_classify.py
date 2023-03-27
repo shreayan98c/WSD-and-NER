@@ -180,15 +180,11 @@ def exp_weight(docs, mode):
                     break
             for word in doc.text:
                 if not target:
-                    doc_w.append(1)
+                    doc_w.append(1 / len(doc.text))
                 elif word == target:
                     doc_w.append(0)
                 else:
-                    try:
-                        doc_w.append(1 / abs(doc.text.index(target) - doc.text.index(word)))
-                    except:
-                        print(target, word)
-                        exit()
+                    doc_w.append(1 / abs(doc.text.index(target) - doc.text.index(word)))
             w_lst.append(doc_w)
     elif mode == 'bigram':
         for doc in docs:
@@ -256,20 +252,20 @@ def custom_weight(docs, mode):
                 elif abs(doc.text.index(target) - word) > 4:
                     tmp.append(1)
                 elif abs(doc.text.index(target) - word) == 4:
-                    tmp.append(40)
-                elif abs(doc.text.index(target) - word) == 3:
-                    tmp.append(20)
-                elif abs(doc.text.index(target) - word) == 2:
                     tmp.append(80)
+                elif abs(doc.text.index(target) - word) == 3:
+                    tmp.append(40)
+                elif abs(doc.text.index(target) - word) == 2:
+                    tmp.append(20)
                 elif abs(doc.text.index(target) - word) == 1:
-                    tmp.append(60)
+                    tmp.append(10)
                 elif abs(doc.text.index(target) - word) == 0:
                     tmp.append(0)
             w_lst.append(tmp)
 
     elif mode == 'bigram':
         for doc in docs:
-            tmp = [60, 60]
+            tmp = [10, 10]
             w_lst.append(tmp)
     return w_lst
 
