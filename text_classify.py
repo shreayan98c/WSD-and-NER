@@ -49,11 +49,11 @@ def read_docs(file, model):
                 t = re.findall(r'\.X-\S+', sentence)
                 if len(t) > 0:
                     t = t[0]
-                if t:
-                    t_index = text.index(t)
-                    pair.append(text[t_index - 1] + ' ' + text[t_index])
-                    pair.append(text[t_index] + ' ' + text[t_index + 1])
-                    docs.append(pair)
+                # if t:
+                t_index = text.index(t)
+                pair.append(text[t_index - 1] + ' ' + text[t_index])
+                pair.append(text[t_index] + ' ' + text[t_index + 1])
+                docs.append(pair)
 
     return [Document(i + 1, text) for i, text in enumerate(docs)], category
 
@@ -74,22 +74,6 @@ def profile(vecs: Dict[str, int], target: int, category: list):
     N = len(t_vec)
     for key in profile.keys():
         profile[key] /= N
-
-    return dict(profile)
-
-
-def sum1(vecs: Dict[str, int], target: int, category: list):
-    profile = defaultdict(float)
-    count = 0
-    t_vec = []
-    for vec in vecs:
-        if category[count] == target:
-            t_vec.append(vec)
-        count += 1
-
-    for vec in t_vec:
-        for key in vec.keys():
-            profile[key] += vec[key]
 
     return dict(profile)
 
@@ -143,10 +127,6 @@ def compute_tfidf(doc: Document, doc_freqs: Dict[str, int], weights: list, doc_l
     return dict(vec)
 
 
-def calc_acc(left, right):
-    return left + 1, right + 0.08
-
-
 ### Vector Similarity
 
 def dictdot(x: Dict[str, float], y: Dict[str, float]):
@@ -179,9 +159,7 @@ def exp_weight(docs, mode):
                     target = target[0]
                     break
             for word in doc.text:
-                if not target:
-                    doc_w.append(1 / len(doc.text))
-                elif word == target:
+                if word == target:
                     doc_w.append(0)
                 else:
                     doc_w.append(1 / abs(doc.text.index(target) - doc.text.index(word)))
@@ -216,9 +194,7 @@ def stepped_weight(docs, mode):
                     target = target[0]
                     break
             for word in range(len(doc.text)):
-                if not target:
-                    tmp.append(0)
-                elif abs(doc.text.index(target) - word) > 3:
+                if abs(doc.text.index(target) - word) > 3:
                     tmp.append(1)
                 elif abs(doc.text.index(target) - word) == 2 or abs(doc.text.index(target) - word) == 3:
                     tmp.append(3)
@@ -247,9 +223,7 @@ def custom_weight(docs, mode):
                     target = target[0]
                     break
             for word in range(len(doc.text)):
-                if not target:
-                    tmp.append(0)
-                elif abs(doc.text.index(target) - word) > 4:
+                if abs(doc.text.index(target) - word) > 4:
                     tmp.append(1)
                 elif abs(doc.text.index(target) - word) == 4:
                     tmp.append(80)
@@ -268,6 +242,56 @@ def custom_weight(docs, mode):
             tmp = [10, 10]
             w_lst.append(tmp)
     return w_lst
+
+
+def smsspam():
+    docs, category = read_docs('smsspam-train.tsv', 'bow')
+    # compute doc frequency
+    doc_freq = compute_doc_freqs(docs)
+    # compute weights
+    weight = uniform_weight(docs, 'bow')
+    # compute tfidf
+    doc_count = 0
+    tf = []
+    N = len(docs)
+    for doc in docs:
+        tf.append(compute_tfidf(doc, doc_freq, weight[doc_count], N))
+        doc_count += 1
+    profile1 = profile(tf, 1, category)
+    profile2 = profile(tf, 2, category)
+
+    dev1_docs, categories = read_docs('smsspam-dev.tsv', 'bow')
+    # compute doc frequency
+    doc_freq = compute_doc_freqs(dev1_docs)
+    # compute weights
+    weight = uniform_weight(dev1_docs, 'bow')
+    # compute tfidf
+    doc_count = 0
+    tf = []
+    N = len(dev1_docs)
+    for doc in dev1_docs:
+        tf.append(compute_tfidf(doc, doc_freq, weight[doc_count], N))
+        doc_count += 1
+    sim1 = []
+    sim2 = []
+    for vec in tf:
+        sim1.append(cosine_sim(vec, profile1))
+        sim2.append(cosine_sim(vec, profile2))
+    right = 0
+    wrong = 0
+    for i in range(len(sim1)):
+        if sim1[i] > sim2[i] and categories[i] == 1:
+            right += 1
+        elif sim1[i] > sim2[i] and categories[i] == 2:
+            wrong += 1
+        elif sim2[i] > sim1[i] and categories[i] == 2:
+            right += 1
+        elif sim2[i] > sim1[i] and categories[i] == 1:
+            wrong += 1
+        elif sim1[i] == sim2[i]:
+            right += 1
+    acc_sms = right / (right + wrong)
+    return acc_sms
 
 
 def experiment():
@@ -299,9 +323,16 @@ def experiment():
     print('Stemming', 'Position Weighting', 'Local Collocation Modelling', 'tank', 'pers/place', 'plants', 'smsspam',
           sep='\t')
 
+    acc_sms = round(smsspam(), 4)
+
     for stemming, weighting, model in comb:
         accuracy = []
         for doc_i in range(0, len(train_docs)):
+            if doc_i == len(train_docs)-1:
+                # handle smsspam files since they don't have -X. tokens
+                accuracy.append(acc_sms)
+                acc_sms = "--"
+                break
             docs, category = read_docs(train_docs[doc_i], model=model_funcs[model])
             # check for stem doc
             if stemming == 'stemmed':
@@ -353,8 +384,6 @@ def experiment():
                     wrong += 1
                 elif sim1[i] == sim2[i]:
                     right += 1
-            if not right and not wrong:
-                right, wrong = calc_acc(right, wrong)
             acc = right / (right + wrong)
             accuracy.append(acc)
         print(stemming, weighting, model, *accuracy, sep='\t')
