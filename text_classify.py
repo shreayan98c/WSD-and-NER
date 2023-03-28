@@ -212,6 +212,12 @@ def stepped_weight(docs, mode):
 
 
 def custom_weight(docs, mode):
+    """
+    Implements the exponential decay with window threshold of 5 (context size of 5 on left and right)
+    Works well to restrict the context size. If we don't restrict the context size, the words that are far away will
+    affect the weight of the current term, no matter however small it might be, even if it's not relevant to the current
+    word. Hence, it helps to have some kind of a context window, outside which the weight of all terms will be 0.
+    """
     w_lst = []
     if mode == 'bow':
         for doc in docs:
@@ -224,15 +230,15 @@ def custom_weight(docs, mode):
                     break
             for word in range(len(doc.text)):
                 if abs(doc.text.index(target) - word) > 4:
-                    tmp.append(1)
+                    tmp.append(0)
                 elif abs(doc.text.index(target) - word) == 4:
-                    tmp.append(80)
-                elif abs(doc.text.index(target) - word) == 3:
-                    tmp.append(40)
-                elif abs(doc.text.index(target) - word) == 2:
-                    tmp.append(20)
-                elif abs(doc.text.index(target) - word) == 1:
                     tmp.append(10)
+                elif abs(doc.text.index(target) - word) == 3:
+                    tmp.append(100)
+                elif abs(doc.text.index(target) - word) == 2:
+                    tmp.append(1000)
+                elif abs(doc.text.index(target) - word) == 1:
+                    tmp.append(10000)
                 elif abs(doc.text.index(target) - word) == 0:
                     tmp.append(0)
             w_lst.append(tmp)
