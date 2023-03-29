@@ -1,4 +1,6 @@
 import re
+import math
+import random
 import numpy as np
 from numpy.linalg import norm
 from collections import Counter, defaultdict
@@ -49,7 +51,6 @@ def read_docs(file, model):
                 t = re.findall(r'\.X-\S+', sentence)
                 if len(t) > 0:
                     t = t[0]
-                # if t:
                 t_index = text.index(t)
                 pair.append(text[t_index - 1] + ' ' + text[t_index])
                 pair.append(text[t_index] + ' ' + text[t_index + 1])
@@ -145,6 +146,22 @@ def cosine_sim(x, y):
     if num == 0:
         return 0
     return num / (norm(list(x.values())) * norm(list(y.values())))
+
+
+def sum_profiles(vecs: Dict[str, int], target: int, category: list):
+    profile = defaultdict(float)
+    count = 0
+    t_vec = []
+    for vec in vecs:
+        if category[count] == target:
+            t_vec.append(vec)
+        count += 1
+
+    for vec in t_vec:
+        for key in vec.keys():
+            profile[key] += vec[key]
+
+    return dict(profile)
 
 
 def exp_weight(docs, mode):
@@ -250,6 +267,21 @@ def custom_weight(docs, mode):
     return w_lst
 
 
+def bayes_weight(V_sum1, V_sum2, epsilon):
+    Llike = dict()
+    for term in V_sum2.keys():
+        if V_sum1.get(term) is None or V_sum2[term] == 0:
+            continue
+        if V_sum1[term] > 0:
+            Llike[term] = math.log(V_sum1[term] / V_sum2[term])
+        else:
+            Llike[term] = math.log(epsilon / V_sum2[term])
+    for term in V_sum1.keys():
+        if term not in V_sum2 and V_sum1[term] != 0:
+            Llike[term] = math.log(V_sum1[term] / epsilon)
+    return Llike
+
+
 def smsspam():
     docs, category = read_docs('smsspam-train.tsv', 'bow')
     # compute doc frequency
@@ -334,7 +366,7 @@ def experiment():
     for stemming, weighting, model in comb:
         accuracy = []
         for doc_i in range(0, len(train_docs)):
-            if doc_i == len(train_docs)-1:
+            if doc_i == len(train_docs) - 1:
                 # handle smsspam files since they don't have -X. tokens
                 accuracy.append(acc_sms)
                 acc_sms = "--"
@@ -395,5 +427,76 @@ def experiment():
         print(stemming, weighting, model, *accuracy, sep='\t')
 
 
+def bayes():
+    train_docs = ['tank-train.tsv', 'perplace-train.tsv', 'plant-train.tsv', 'smsspam-train.tsv']
+    dev_docs = ['tank-dev.tsv', 'perplace-dev.tsv', 'plant-dev.tsv', 'smsspam-dev.tsv']
+    print('stemmed', '#1-expndecay', '#1-bag-of-words', 'bayes', end='\t')
+    for doc_i, (train, dev) in enumerate(zip(train_docs, dev_docs)):
+        if doc_i == len(train_docs) - 1:
+            # handle smsspam files since they don't have -X. tokens
+            # accuracy.append(acc_sms)
+            # acc_sms = "--"
+            print('--')
+            break
+
+        docs, category = read_docs(train, model='bow')
+
+        # check for stem doc
+        docs = stem_docs(docs)
+
+        # remove stopwords
+        docs = remove_stopwords(docs)
+
+        # compute weights
+        weight = exp_weight(docs, 'bow')
+
+        # compute tf
+        doc_count = 0
+        tf = []
+        for doc in docs:
+            tf.append(compute_tf(doc, weight[doc_count]))
+            doc_count += 1
+        vsum1 = sum_profiles(tf, 1, category)
+        vsum2 = sum_profiles(tf, 2, category)
+        LLike = bayes_weight(vsum1, vsum2, 0.2)
+
+        docs, category = read_docs(dev, model='bow')
+        # check for stem doc
+        docs = stem_docs(docs)
+        # remove stopwords
+        docs = remove_stopwords(docs)
+        # compute weights
+        weight = exp_weight(docs, 'bow')
+        # compute tf
+        doc_count = 0
+        tf = []
+        for doc in docs:
+            tf.append(compute_tf(doc, weight[doc_count]))
+            doc_count += 1
+
+        preds = []
+        right = 0
+        wrong = 0
+        for i, vtest in enumerate(tf):
+            sumofLL = 0
+            for term in vtest.keys():
+                sumofLL += LLike.get(term, 0) * vtest[term]
+            if sumofLL > 0:
+                pred = 1
+                preds.append(1)
+            elif sumofLL < 0:
+                pred = 2
+                preds.append(2)
+            else:
+                pred = random.choice([1, 2])
+                preds.append(pred)
+            if pred == category[i]:
+                right += 1
+            else:
+                wrong += 1
+        print((right / (right + wrong)), end='\t')
+
+
 if __name__ == '__main__':
     experiment()
+    bayes()
